@@ -627,6 +627,7 @@ target_compile_definitions(ymir-core PUBLIC "Ymir_EXTRA_INLINING=$<BOOL:${Ymir_E
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_DIRECT3D=$<BOOL:${WIN32}>")
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_VULKAN=$<BOOL:${Vulkan_FOUND}>")
 target_compile_definitions(ymir-core PUBLIC "YMIR_PLATFORM_HAS_METAL=$<BOOL:${APPLE}>")
+target_compile_definitions(ymir-core PUBLIC "Ymir_VDP_OUTPUT_XRGB=$<BOOL:${Ymir_ENABLE_LIBRETRO}>")
 target_compile_definitions(ymir-core PUBLIC "TOML_EXCEPTIONS=0")
 
 ## Define feature flags macros
