@@ -17,6 +17,8 @@
       -DYmir_ENABLE_SDL3_APP=OFF
       -DYmir_ENABLE_SANDBOX=OFF
       -DYmir_ENABLE_YMDASM=OFF
+      -DYmir_ENABLE_YMIR_HEADLESS=OFF
+      -DYmir_ENABLE_YMIR_DBG=OFF
       -DYmir_ENABLE_TESTS=OFF
       -DYmir_DEV_BUILD=OFF
       $CORE_ARCH_ARGS
@@ -54,6 +56,10 @@ include:
   # tvOS (AppleTV)
   - project: 'libretro-infrastructure/ci-templates'
     file: '/tvos-cmake.yml'
+
+  # Nintendo Switch (libnx)
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/libnx-static-cmake.yml'
 
   #################################### MISC ##################################
 
@@ -140,3 +146,24 @@ libretro-build-tvos-arm64:
     - .core-defs
   variables:
     MINVER: "13.0"
+
+# Nintendo Switch (libnx)
+libretro-build-libnx-aarch64:
+  extends:
+    - .libretro-libnx-static-cmake-retroarch-master
+    - .core-defs
+  before_script:
+    - export NUMPROC=$(($(nproc)/5))
+    - export PATH=/usr/bin:$PATH
+  variables:
+    CORE_ARGS: >-
+      -DYmir_ENABLE_LIBRETRO=ON
+      -DYmir_ENABLE_SDL3_APP=OFF
+      -DYmir_ENABLE_SANDBOX=OFF
+      -DYmir_ENABLE_YMDASM=OFF
+      -DYmir_ENABLE_YMIR_HEADLESS=OFF
+      -DYmir_ENABLE_YMIR_DBG=OFF
+      -DYmir_ENABLE_TESTS=OFF
+      -DYmir_INCLUDE_PACKAGING=OFF
+      -DYmir_DEV_BUILD=OFF
+      -DYmir_ENABLE_IPO=OFF

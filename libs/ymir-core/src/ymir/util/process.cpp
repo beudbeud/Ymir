@@ -17,7 +17,7 @@
     #include <sys/resource.h>
     #include <unistd.h>
     #include <vector>
-#else
+#elif !defined(__SWITCH__)
     #include <limits.h>
     #include <pthread.h>
     #include <sys/resource.h>
@@ -42,7 +42,7 @@ std::filesystem::path GetCurrentProcessExecutablePath() {
             path = realPath;
         }
     }
-#else
+#elif !defined(__SWITCH__)
     char pathStr[PATH_MAX];
     ssize_t size = readlink("/proc/self/exe", pathStr, PATH_MAX);
     path = std::string(pathStr, (size > 0) ? size : 0);
@@ -51,13 +51,13 @@ std::filesystem::path GetCurrentProcessExecutablePath() {
 }
 
 void BoostCurrentProcessPriority(bool boost) {
-#ifdef _WIN32
+#if defined(_WIN32)
     if (boost) {
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     } else {
         SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
     }
-#else
+#elif !defined(__SWITCH__)
     if (boost) {
         setpriority(PRIO_PROCESS, getpid(), -20);
     } else {
@@ -67,14 +67,14 @@ void BoostCurrentProcessPriority(bool boost) {
 }
 
 void BoostCurrentThreadPriority(bool boost) {
-#ifdef _WIN32
+#if defined(_WIN32)
     if (boost) {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     } else {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
     }
     SetThreadPriorityBoost(GetCurrentThread(), FALSE);
-#else
+#elif !defined(__SWITCH__)
     int policy;
     struct sched_param param;
 

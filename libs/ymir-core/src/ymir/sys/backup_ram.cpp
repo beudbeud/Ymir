@@ -709,6 +709,7 @@ BackupFile BackupMemory::BuildFile(const BackupFileParams &params) const {
     return file;
 }
 
+#ifndef YMIR_NO_MMAP
 std::unique_ptr<BackupMemory::Container> BackupMemory::MemoryMapFile(const std::filesystem::path &path,
                                                                      bool copyOnWrite, std::error_code &error) {
     if (copyOnWrite) {
@@ -725,6 +726,26 @@ std::unique_ptr<BackupMemory::Container> BackupMemory::MemoryMapFile(const std::
     }
     return std::make_unique<MemoryMappedFileContainer>(std::move(mmap));
 }
+#else
+std::unique_ptr<BackupMemory::Container> BackupMemory::MemoryMapFile(const std::filesystem::path &path,
+                                                                     bool copyOnWrite, std::error_code &error) {
+    // Fallback: read entire file into memory
+    std::ifstream in{path, std::ios::binary | std::ios::ate};
+    if (!in) {
+        error.assign(errno, std::generic_category());
+        return {};
+    }
+    const auto size = static_cast<size_t>(in.tellg());
+    auto container = std::make_unique<InMemoryContainer>(size);
+    in.seekg(0);
+    in.read(reinterpret_cast<char *>(container->Data()), size);
+    if (!in) {
+        error.assign(errno, std::generic_category());
+        return {};
+    }
+    return container;
+}
+#endif
 
 FORCE_INLINE uint8 BackupMemory::DataReadByte(uint32 address) const {
     if (m_addressMask != 0) {
