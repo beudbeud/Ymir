@@ -506,13 +506,21 @@ target_link_libraries(ymir-core PUBLIC
     ymir-core::shaders
 
     fmt::fmt
-    mio
     concurrentqueue
     xxHash::xxHash
     chdr-static
     stb::stb
     dr_libs::dr_libs
 )
+if (NOT NSWITCH)
+    target_link_libraries(ymir-core PUBLIC mio)
+else ()
+    target_compile_definitions(ymir-core PUBLIC "YMIR_NO_MMAP=1")
+    # DevKitPro's aarch64-none-elf target doesn't define __unix__ but provides
+    # POSIX APIs (pthreads, semaphores) via newlib. Define __unix__ so vendored
+    # libraries like concurrentqueue select their POSIX code paths.
+    target_compile_definitions(ymir-core PUBLIC "__unix__")
+endif ()
 if (WIN32)
     target_link_libraries(ymir-core PUBLIC
         synchronization  # for WaitOnAddress and WakeByAddressAll
@@ -601,7 +609,7 @@ target_precompile_headers(ymir-core
         "$<$<COMPILE_LANGUAGE:CXX>:<fmt/std.h$<ANGLE-R>>"
         "$<$<COMPILE_LANGUAGE:CXX>:<fmt/xchar.h$<ANGLE-R>>"
 
-        "$<$<COMPILE_LANGUAGE:CXX>:<mio/mmap.hpp$<ANGLE-R>>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<BOOL:${NSWITCH}>>>:<mio/mmap.hpp$<ANGLE-R>>"
 )
 
 ## Define version macros

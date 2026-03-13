@@ -9,7 +9,7 @@
 
     #include <ymir/util/bit_ops.hpp>
 
-#else // POSIX
+#elif !defined(__SWITCH__)
 
     #include <sys/mman.h>
 
@@ -59,6 +59,11 @@ void VirtualMemory::Map(size_t size) {
     m_internal->hSection = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, bit::extract<32, 63>(size),
                                               bit::extract<0, 31>(size), nullptr);
     m_mem = MapViewOfFile(m_internal->hSection, FILE_MAP_ALL_ACCESS, 0, 0, size);
+#elif defined(__SWITCH__)
+    m_mem = std::malloc(size);
+    if (m_mem) {
+        std::memset(m_mem, 0, size);
+    }
 #else // POSIX
     m_mem = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 #endif
@@ -70,6 +75,8 @@ void VirtualMemory::Unmap() {
     UnmapViewOfFile(m_mem);
     CloseHandle(m_internal->hSection);
     m_internal->hSection = INVALID_HANDLE_VALUE;
+#elif defined(__SWITCH__)
+    std::free(m_mem);
 #else // POSIX
     munmap(m_mem, m_size);
 #endif

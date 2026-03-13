@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef YMIR_NO_MMAP
+
 #include "binary_reader.hpp"
 
 #include <mio/mmap.hpp>
@@ -54,3 +56,16 @@ private:
 };
 
 } // namespace ymir::media
+
+#else // YMIR_NO_MMAP
+
+#include "binary_reader_mem.hpp"
+
+namespace ymir::media {
+
+// Fall back to MemoryBinaryReader when mmap is not available
+using MemoryMappedBinaryReader = MemoryBinaryReader;
+
+} // namespace ymir::media
+
+#endif // YMIR_NO_MMAP

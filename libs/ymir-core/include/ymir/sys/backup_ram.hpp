@@ -5,7 +5,9 @@
 #include <ymir/sys/backup_ram_defs.hpp>
 #include <ymir/sys/bus.hpp>
 
-#include <mio/mmap.hpp>
+#ifndef YMIR_NO_MMAP
+    #include <mio/mmap.hpp>
+#endif
 
 #include <filesystem>
 #include <memory>
@@ -128,6 +130,7 @@ private:
         mutable std::vector<uint8> m_data;
     };
 
+#ifndef YMIR_NO_MMAP
     /// @brief A backup RAM data container backed by a memory-mapped file.
     /// Changes made to the backup memory are written to the file.
     struct MemoryMappedFileContainer : public Container {
@@ -161,17 +164,15 @@ private:
     private:
         mutable mio::mmap_cow_sink m_sink;
     };
+#endif
 
-    // Attempts to memory-map the specified file.
-    // If failed, returns an empty unique_ptr and fills in the error code.
-
-    /// @brief Attempts to memory-map the specified file.
+    /// @brief Attempts to memory-map the specified file, or loads it into memory if mmap is unavailable.
     /// If failed, returns an empty `unique_ptr` and fills in the error code.
     ///
     /// @param[in] path the path to the backup memory file to create
     /// @param[in] copyOnWrite indicates if the file should be mapped in copy-on-write mode
     /// @param[out] error outputs a file system error if any is encountered
-    /// @return a pointer to the memory-mapped file container for the backup RAM; empty if failed.
+    /// @return a pointer to the container for the backup RAM; empty if failed.
     static std::unique_ptr<Container> MemoryMapFile(const std::filesystem::path &path, bool copyOnWrite,
                                                     std::error_code &error);
 
