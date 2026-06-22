@@ -73,6 +73,27 @@ static struct retro_core_option_v2_definition option_definitions[] = {
         "disabled",
     },
     {
+        "ymir_sh2_clock_factor",
+        "SH-2 Clock Factor (Overclock)",
+        "SH-2 Clock",
+        "Adjusts the SH-2 CPU clock rate. Values above 100% reduce internal slowdowns/lag in CPU-heavy games; below 100% improves performance but may cause slowdowns. Changing from 100% may lower compatibility.",
+        nullptr,
+        "system",
+        {
+            {"25", "25%"},
+            {"50", "50%"},
+            {"75", "75%"},
+            {"100", "100% (Accurate)"},
+            {"150", "150%"},
+            {"200", "200%"},
+            {"300", "300%"},
+            {"400", "400%"},
+            {"500", "500%"},
+            {nullptr, nullptr},
+        },
+        "100",
+    },
+    {
         "ymir_rtc_mode",
         "RTC Mode",
         "RTC",
@@ -482,6 +503,10 @@ static void apply_core_options() {
 
     // --- System ---
     config.system.emulateSH2Cache = (get_variable("ymir_sh2_cache") == "enabled");
+
+    auto clock_factor = get_variable("ymir_sh2_clock_factor");
+    if (!clock_factor.empty())
+        config.system.sh2ClockFactor = RatioU32::FromPercentage(static_cast<uint32_t>(std::stoi(clock_factor)));
 
     auto rtc_mode = get_variable("ymir_rtc_mode");
     if (rtc_mode == "host")
