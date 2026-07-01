@@ -73,9 +73,7 @@ endif ()
 ####################################################################################################
 # Other dependencies
 
-# imgui and lz4 are only consumed by the SDL3 frontend, so only build them when
-# that app is enabled (keeps library-only and libretro builds free of SDL3).
-if (Ymir_ENABLE_SDL3_APP)
+if (NOT Ymir_LIBRARY_ONLY)
     # dear ImGui - https://github.com/ocornut/imgui
     # - Using the docking branch
     message(STATUS "==> dear ImGui")
@@ -98,7 +96,7 @@ if (MSVC)
     set_target_properties(chdr-lzma PROPERTIES FOLDER Vendored)
     set_target_properties(chdr-static PROPERTIES FOLDER Vendored)
     set_target_properties(xxHash PROPERTIES FOLDER Vendored)
-    if (Ymir_ENABLE_SDL3_APP)
+    if (NOT Ymir_LIBRARY_ONLY)
         set_target_properties(imgui PROPERTIES FOLDER Vendored)
         set_target_properties(lz4 PROPERTIES FOLDER Vendored)
         set_target_properties(discord-rpc PROPERTIES FOLDER Vendored)
