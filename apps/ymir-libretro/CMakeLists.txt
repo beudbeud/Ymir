@@ -1,10 +1,12 @@
 if (LIBRETRO_STATIC)
     add_library(ymir_libretro STATIC
         src/libretro.cpp
+        src/vfs.cpp
     )
 else ()
     add_library(ymir_libretro SHARED
         src/libretro.cpp
+        src/vfs.cpp
     )
 endif ()
 

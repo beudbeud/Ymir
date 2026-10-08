@@ -1,5 +1,7 @@
 #include "libretro.h"
 
+#include "vfs.hpp"
+
 #include <ymir/sys/saturn.hpp>
 
 #include <ymir/media/loader/loader.hpp>
@@ -24,13 +26,15 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 #include <ymir/util/dev_log.hpp>
+
+namespace vfs = ymir_libretro::vfs;
 
 // ---------------------------------------------------------------------------
 // Core options
@@ -644,20 +648,16 @@ static ymir::db::SystemRegion area_code_to_bios_region(uint8_t area_code) {
 static std::vector<BiosCandidate> scan_bios_candidates() {
     std::vector<BiosCandidate> candidates;
     for (const char *name : kBiosFilenames) {
-        auto path = std::filesystem::path(core.system_dir) / name;
-        std::error_code ec;
-        auto size = std::filesystem::file_size(path, ec);
-        if (ec || size != ymir::sys::kIPLSize)
+        const auto path = vfs::Join(core.system_dir, name);
+        if (vfs::FileSize(path) != ymir::sys::kIPLSize)
             continue;
 
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
+        auto file = vfs::ReadFile(path);
+        if (!file || file->size() != ymir::sys::kIPLSize)
             continue;
 
         BiosCandidate candidate{name, {}, nullptr, ymir::db::SystemRegion::None};
-        file.read(reinterpret_cast<char *>(candidate.data.data()), candidate.data.size());
-        if (!file)
-            continue;
+        std::copy(file->begin(), file->end(), candidate.data.begin());
 
         auto hash = ymir::CalcHash128(candidate.data.data(), candidate.data.size());
         candidate.info = ymir::db::GetIPLROMInfo(hash);
@@ -715,29 +715,20 @@ static void load_bios_candidate(BiosCandidate &candidate) {
 // ---------------------------------------------------------------------------
 
 static bool load_cdblock_rom() {
-    auto cdb_dir = std::filesystem::path(core.system_dir) / "cdb";
-    std::error_code ec;
-    if (!std::filesystem::is_directory(cdb_dir, ec))
-        return false;
-
-    for (auto &entry : std::filesystem::directory_iterator(cdb_dir, ec)) {
-        if (!entry.is_regular_file())
+    const auto cdb_dir = vfs::Join(core.system_dir, "cdb");
+    for (const auto &entry : vfs::ListDir(cdb_dir)) {
+        if (entry.isDirectory)
             continue;
-        auto size = entry.file_size(ec);
-        if (ec || size != ymir::sh1::kROMSize)
+        const auto path = vfs::Join(cdb_dir, entry.name);
+        if (vfs::FileSize(path) != ymir::sh1::kROMSize)
             continue;
 
-        std::ifstream file(entry.path(), std::ios::binary);
-        if (!file)
+        auto rom = vfs::ReadFile(path);
+        if (!rom || rom->size() != ymir::sh1::kROMSize)
             continue;
 
-        std::array<uint8_t, ymir::sh1::kROMSize> rom{};
-        file.read(reinterpret_cast<char *>(rom.data()), rom.size());
-        if (!file)
-            continue;
-
-        core.saturn->LoadCDBlockROM(std::span<uint8_t, ymir::sh1::kROMSize>(rom));
-        LOG(RETRO_LOG_INFO, "[Ymir] Loaded CD block ROM: %s\n", entry.path().filename().c_str());
+        core.saturn->LoadCDBlockROM(std::span<uint8_t, ymir::sh1::kROMSize>(rom->data(), ymir::sh1::kROMSize));
+        LOG(RETRO_LOG_INFO, "[Ymir] Loaded CD block ROM: %s\n", entry.name.c_str());
         return true;
     }
     return false;
@@ -748,23 +739,16 @@ static bool load_cdblock_rom() {
 // ---------------------------------------------------------------------------
 
 static bool load_rom_cartridge(const char *filename, const ymir::db::ROMCartInfo &info) {
-    auto path = std::filesystem::path(core.system_dir) / filename;
-    std::error_code ec;
-    auto size = std::filesystem::file_size(path, ec);
-    if (ec || size != ymir::cart::kROMCartSize)
+    const auto path = vfs::Join(core.system_dir, filename);
+    if (vfs::FileSize(path) != ymir::cart::kROMCartSize)
         return false;
 
-    std::ifstream file(path, std::ios::binary);
-    if (!file)
-        return false;
-
-    std::vector<uint8_t> rom(ymir::cart::kROMCartSize);
-    file.read(reinterpret_cast<char *>(rom.data()), rom.size());
-    if (!file)
+    auto rom = vfs::ReadFile(path);
+    if (!rom || rom->size() != ymir::cart::kROMCartSize)
         return false;
 
     auto *cart = core.saturn->InsertCartridge<ymir::cart::ROMCartridge>();
-    cart->LoadROM(std::span<const uint8_t>(rom.data(), rom.size()));
+    cart->LoadROM(std::span<const uint8_t>(rom->data(), rom->size()));
     LOG(RETRO_LOG_INFO, "[Ymir] Loaded ROM cartridge: %s (%s)\n", info.gameName, filename);
     return true;
 }
@@ -847,13 +831,14 @@ static void configure_cartridge(const ymir::db::GameInfo *game_info) {
 // M3U playlist parsing
 // ---------------------------------------------------------------------------
 
-static std::vector<std::string> parse_m3u(const std::filesystem::path &m3u_path) {
+static std::vector<std::string> parse_m3u(const std::string &m3u_path) {
     std::vector<std::string> paths;
-    std::ifstream f(m3u_path);
-    if (!f)
+    auto data = vfs::ReadFile(m3u_path);
+    if (!data)
         return paths;
 
-    auto base_dir = m3u_path.parent_path();
+    auto base_dir = vfs::ToPath(m3u_path).parent_path();
+    std::istringstream f(std::string(data->begin(), data->end()));
     std::string line;
     while (std::getline(f, line)) {
         // Trim trailing whitespace/CR
@@ -862,10 +847,10 @@ static std::vector<std::string> parse_m3u(const std::filesystem::path &m3u_path)
         if (line.empty() || line[0] == '#')
             continue;
 
-        std::filesystem::path p(line);
+        auto p = vfs::ToPath(line);
         if (p.is_relative())
             p = base_dir / p;
-        paths.push_back(p.string());
+        paths.push_back(vfs::FromPath(p));
     }
     return paths;
 }
@@ -873,6 +858,18 @@ static std::vector<std::string> parse_m3u(const std::filesystem::path &m3u_path)
 // ---------------------------------------------------------------------------
 // Disc control callbacks
 // ---------------------------------------------------------------------------
+
+// Loads a disc image (through the frontend VFS when available). Loader exceptions, e.g.
+// for a file that can be stat'ed but not opened or a malformed cue sheet, must not cross the libretro C API.
+static bool load_disc(const std::string &path, ymir::media::Disc &disc, ymir::media::CbLoaderMessage disc_log) {
+    try {
+        return ymir::media::LoadDisc(vfs::ToPath(path), disc, false, disc_log);
+    } catch (const std::exception &e) {
+        LOG(RETRO_LOG_ERROR, "[Ymir] %s\n", e.what());
+        disc.Invalidate();
+        return false;
+    }
+}
 
 static bool disc_set_eject_state(bool ejected) {
     if (!core.saturn)
@@ -885,13 +882,7 @@ static bool disc_set_eject_state(bool ejected) {
         if (core.disc_index < core.disc_paths.size()) {
             const auto &path = core.disc_paths[core.disc_index];
             ymir::media::Disc disc;
-            bool loaded = ymir::media::LoadDisc(
-                path, disc, false,
-                [](ymir::media::MessageType type, std::string msg) {
-                    auto level = (type == ymir::media::MessageType::Error) ? RETRO_LOG_ERROR : RETRO_LOG_INFO;
-                    LOG(level, "[Ymir] %s\n", msg.c_str());
-                });
-            if (loaded) {
+            if (load_disc(path, disc, disc_log)) {
                 core.saturn->EjectDisc();
                 core.saturn->LoadDisc(std::move(disc));
             }
@@ -954,6 +945,69 @@ static bool disc_get_image_label(unsigned index, char *buf, size_t len) {
     std::strncpy(buf, name.c_str(), len - 1);
     buf[len - 1] = '\0';
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// SMPC persistent data (RTC, language, area code)
+//
+// The frontend owns file I/O for this data; SMPC only holds it in memory.
+// The binary format below matches ymir-sdl3's PersistenceService so save
+// files are interchangeable between frontends.
+// ---------------------------------------------------------------------------
+
+static constexpr uint8_t kPersistentSMPCDataVersion = 0x01;
+
+static bool load_persistent_smpc_data(const std::string &path, ymir::smpc::PersistentSMPCData &data) {
+    auto file = vfs::ReadFile(path);
+    if (!file)
+        return false;
+    std::istringstream in{std::string(file->begin(), file->end()), std::ios::binary};
+
+    int version = in.get();
+    if (version != kPersistentSMPCDataVersion)
+        return false;
+    in.seekg(3, std::ios::cur); // skip 3 reserved bytes
+
+    std::array<uint8_t, 4> smem{};
+    bool ste{};
+    uint64_t rtc_offset{};
+    uint64_t rtc_timestamp{};
+
+    in.read(reinterpret_cast<char *>(smem.data()), sizeof(smem));
+    in.read(reinterpret_cast<char *>(&ste), sizeof(ste));
+    in.read(reinterpret_cast<char *>(&rtc_offset), sizeof(rtc_offset));
+    in.read(reinterpret_cast<char *>(&rtc_timestamp), sizeof(rtc_timestamp));
+    if (!in)
+        return false;
+
+    data.SMEM = smem;
+    data.STE = ste;
+    data.rtc.offset = bit::little_endian_swap<uint64_t>(rtc_offset);
+    data.rtc.timestamp = bit::little_endian_swap<uint64_t>(rtc_timestamp);
+    return true;
+}
+
+static void save_persistent_smpc_data(const ymir::smpc::PersistentSMPCData &data, void *) {
+    if (core.save_dir.empty())
+        return;
+
+    std::ostringstream out{std::ios::binary};
+    out.put(kPersistentSMPCDataVersion);
+    out.put(0x00); // reserved for future expansion
+    out.put(0x00); // reserved for future expansion
+    out.put(0x00); // reserved for future expansion
+
+    const uint64_t rtc_offset = bit::little_endian_swap<uint64_t>(data.rtc.offset);
+    const uint64_t rtc_timestamp = bit::little_endian_swap<uint64_t>(data.rtc.timestamp);
+
+    out.write(reinterpret_cast<const char *>(data.SMEM.data()), sizeof(data.SMEM));
+    out.write(reinterpret_cast<const char *>(&data.STE), sizeof(data.STE));
+    out.write(reinterpret_cast<const char *>(&rtc_offset), sizeof(rtc_offset));
+    out.write(reinterpret_cast<const char *>(&rtc_timestamp), sizeof(rtc_timestamp));
+
+    const std::string bytes = out.str();
+    vfs::WriteFile(vfs::Join(core.save_dir, "smpc.bin"),
+                   std::span(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size()));
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,6 +1074,16 @@ RETRO_API void retro_set_environment(retro_environment_t cb) {
     if (cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, &bitmasks))
         core.use_input_bitmasks = bitmasks;
 
+    // Request the VFS interface (v3+) so all file access goes through the frontend. That's the only way to reach
+    // content the host file system can't open, e.g. Android SAF URIs or physical CD-ROM drives ("cdrom://"). Only
+    // install it on success: RetroArch also calls retro_set_environment on a running core while probing core info,
+    // with every request ignored, and that must not drop the VFS. retro_deinit clears it.
+    struct retro_vfs_interface_info vfs_info{};
+    vfs_info.required_interface_version = 3;
+    vfs_info.iface = nullptr;
+    if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_info))
+        vfs::Init(vfs_info.iface);
+
     struct retro_log_callback log{};
     if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
         core.log_cb = log.log;
@@ -1071,6 +1135,7 @@ RETRO_API void retro_deinit(void) {
     core.saturn.reset();
     core.audio_buffer.clear();
     core.audio_buffer.shrink_to_fit();
+    vfs::Init(nullptr);
 }
 
 RETRO_API unsigned retro_api_version(void) {
@@ -1185,7 +1250,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
     auto ext = game_path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     if (ext == ".m3u") {
-        core.disc_paths = parse_m3u(game_path);
+        core.disc_paths = parse_m3u(game->path);
         if (core.disc_paths.empty()) {
             LOG(RETRO_LOG_ERROR, "[Ymir] M3U file is empty or unreadable: %s\n", game->path);
             core.saturn.reset();
@@ -1198,14 +1263,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 
     // Load first disc
     ymir::media::Disc disc;
-    bool loaded = ymir::media::LoadDisc(
-        core.disc_paths[0], disc, false,
-        [](ymir::media::MessageType type, std::string msg) {
-            auto level = (type == ymir::media::MessageType::Error) ? RETRO_LOG_ERROR : RETRO_LOG_INFO;
-            LOG(level, "[Ymir] %s\n", msg.c_str());
-        });
-
-    if (!loaded) {
+    if (!load_disc(core.disc_paths[0], disc, disc_log)) {
         LOG(RETRO_LOG_ERROR, "[Ymir] Failed to load disc: %s\n", core.disc_paths[0].c_str());
         core.saturn.reset();
         return false;
@@ -1280,9 +1338,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
 
     // Load SMPC persistent data (RTC, language, area code) before hard reset
     if (!core.save_dir.empty()) {
-        std::error_code ec;
-        core.saturn->SMPC.LoadPersistentDataFrom(
-            std::filesystem::path(core.save_dir) / "smpc.bin", ec);
+        ymir::smpc::PersistentSMPCData smpc_data{};
+        if (load_persistent_smpc_data(vfs::Join(core.save_dir, "smpc.bin"), smpc_data)) {
+            core.saturn->SMPC.LoadPersistentData(smpc_data);
+        }
+        core.saturn->SMPC.SetPersistDataCallback({nullptr, save_persistent_smpc_data});
     }
 
     // Apply remaining options
