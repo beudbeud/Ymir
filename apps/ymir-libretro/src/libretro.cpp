@@ -527,7 +527,7 @@ static void apply_core_options() {
 
     auto clock_factor = get_variable("ymir_sh2_clock_factor");
     if (!clock_factor.empty())
-        config.system.sh2ClockFactor = RatioU32::FromPercentage(static_cast<uint32_t>(std::stoi(clock_factor)));
+        config.system.sh2ClockFactor = Ratio::FromPercentage(static_cast<uint32_t>(std::stoi(clock_factor)));
 
     auto rtc_mode = get_variable("ymir_rtc_mode");
     if (rtc_mode == "host")
@@ -538,9 +538,9 @@ static void apply_core_options() {
     // Region -- applied at load time, changing at runtime would require a reset.
 
     // --- Video ---
-    config.video.threadedVDP1 = (get_variable("ymir_threaded_vdp1") == "enabled");
-    config.video.threadedVDP2 = (get_variable("ymir_threaded_vdp2") == "enabled");
-    config.video.threadedDeinterlacer = (get_variable("ymir_threaded_deinterlacer") == "enabled");
+    config.swRenderer.threadedVDP1 = (get_variable("ymir_threaded_vdp1") == "enabled");
+    config.swRenderer.threadedVDP2 = (get_variable("ymir_threaded_vdp2") == "enabled");
+    config.swRenderer.threadedDeinterlacer = (get_variable("ymir_threaded_deinterlacer") == "enabled");
 
     core.saturn->VDP.ModifyEnhancements([](ymir::vdp::config::Enhancements &enh) {
         enh.deinterlace = (get_variable("ymir_deinterlace") == "enabled");
@@ -858,6 +858,11 @@ static std::vector<std::string> parse_m3u(const std::string &m3u_path) {
 // ---------------------------------------------------------------------------
 // Disc control callbacks
 // ---------------------------------------------------------------------------
+
+static void disc_log(ymir::media::MessageType type, std::string msg) {
+    auto level = (type == ymir::media::MessageType::Error) ? RETRO_LOG_ERROR : RETRO_LOG_INFO;
+    LOG(level, "[Ymir] %s\n", msg.c_str());
+}
 
 // Loads a disc image (through the frontend VFS when available). Loader exceptions, e.g.
 // for a file that can be stat'ed but not opened or a malformed cue sheet, must not cross the libretro C API.
